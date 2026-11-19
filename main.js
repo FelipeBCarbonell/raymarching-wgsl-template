@@ -6,16 +6,20 @@ import { getAvailableScene } from "./src/scenes.js";
 let spheres = [];
 let boxes = [];
 let toruses = [];
+let cylinders = []; // nova primitiva
 
 // variables and constants
 const THREAD_COUNT = 16;
 const MAX_SPHERES = 20;
 const MAX_BOXES = 20;
 const MAX_TORUSES = 20;
+const MAX_CYLINDERS = 20;
 
 let sphereTemplate = new Shape("Sphere", [0, 1, 0, 0], [1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [0, .2, 0.0, 0.0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]);
 let boxTemplate = new Shape("Box", [0, 2, 0], [.5, .5, .5, 0.1], [0, 0, 0], [0, 0.01, 0.0, 0.0], [0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]);
 let torusTemplate = new Shape("Torus", [0, 2, 0], [.5, .5, .5, 0.1], [0, 0, 0], [0, 0.01, 0.0, 0.0], [0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]);
+// cilindro: radius = [raio, meia-altura, (não usado), arredondamento da borda]
+let cylinderTemplate = new Shape("Cylinder", [0, 1, 0], [.5, .5, 0, 0.05], [0, 0, 0], [0, 0.01, 0.0, 0.0], [1, 0.8, 0], [0, 0, 0, 0], [0, 0, 0, 0]);
 
 let perfCount = 0;
 let cameraVelocity = [0.0, 0.0, 0.0];
@@ -55,6 +59,7 @@ const uniforms = {
     outlineColor: 0.0, // 28
     backgroundColor2: 0.0, // 29
     backgroundColor3: 0.0, // 30
+    cylinderCount: cylinders.length, // 31 (nova primitiva)
 }
 
 const uniformsCount = Object.keys(uniforms).length;
@@ -71,10 +76,10 @@ const frameBuffer = await getComputeBuffer(gpu, frameBufferSize, GPUBufferUsage.
 const uniformsBufferSize = sizes.f32 * uniformsCount;
 const uniformsBuffer = await getComputeBuffer(gpu, uniformsBufferSize, GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE);
 
-const shapesBufferSize = (sizes.vec4 * 9) * (MAX_SPHERES + MAX_BOXES + MAX_TORUSES);
+const shapesBufferSize = (sizes.vec4 * 9) * (MAX_SPHERES + MAX_BOXES + MAX_TORUSES + MAX_CYLINDERS);
 const shapesBuffer = await getComputeBuffer(gpu, shapesBufferSize, GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE);
 
-const shapesInfoBufferSizes = (sizes.vec4) * (MAX_SPHERES + MAX_BOXES + MAX_TORUSES);
+const shapesInfoBufferSizes = (sizes.vec4) * (MAX_SPHERES + MAX_BOXES + MAX_TORUSES + MAX_CYLINDERS);
 const shapesInfoBuffer = await getComputeBuffer(gpu, shapesInfoBufferSizes, GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE);
 
 const frameBuffers = [{ buffer: frameBuffer, type: "storage" }];
@@ -124,6 +129,7 @@ scenesFolder.add({ NewScene: () => {
     spheres = [sphereTemplate];
     boxes = [];
     toruses = [];
+    cylinders = [];
     
     writeBuffers();
     writeUniforms();
@@ -198,6 +204,22 @@ scenesFolder.add({ PrintScene: () => {
         scene += `),\n`;
     }
 
+    scene += "\t\t],\n";
+
+    scene += "\t\tcylinders: [\n";
+    for (let i = 0; i < cylinders.length; i++)
+    {
+        let c = cylinders[i];
+        scene += `\t\t\tnew Shape("Cylinder", `;
+        scene += `[${c.transform[0]}, ${c.transform[1]}, ${c.transform[2]}, ${c.transform[3]}], `;
+        scene += `[${c.radius[0]}, ${c.radius[1]}, ${c.radius[2]}, ${c.radius[3]}], `;
+        scene += `[${c.rotation[0]}, ${c.rotation[1]}, ${c.rotation[2]}, ${c.rotation[3]}], `;
+        scene += `[${c.op[0]}, ${c.op[1]}, ${c.op[2]}, ${c.op[3]}], `;
+        scene += `[${c.color[0]}, ${c.color[1]}, ${c.color[2]}, ${c.color[3]}], `;
+        scene += `[${c.animateTransform[0]}, ${c.animateTransform[1]}, ${c.animateTransform[2]}, ${c.animateTransform[3]}], `;
+        scene += `[${c.animateRotation[0]}, ${c.animateRotation[1]}, ${c.animateRotation[2]}, ${c.animateRotation[3]}]`;
+        scene += `),\n`;
+    }
     scene += "\t\t],\n";
     scene += `\t\tbackgroundColor: [${backgroundColor1.object.r}, ${backgroundColor1.object.g}, ${backgroundColor1.object.b}],\n`;
     scene += `\t\tmaxMarchingSteps: ${uniforms.maxMarchingSteps},\n`;
@@ -391,6 +413,7 @@ function refreshObjectsGUI(startIndex = 0, rebuild = false)
     refreshObjectGUI(sphereTemplate, spheres, objectsFolder, null, startIndex);
     refreshObjectGUI(boxTemplate, boxes, objectsFolder, null, startIndex);
     refreshObjectGUI(torusTemplate, toruses, objectsFolder, null, startIndex);
+    refreshObjectGUI(cylinderTemplate, cylinders, objectsFolder, null, startIndex);
 }
 
 gui.onFinishChange( event => {});
@@ -459,12 +482,15 @@ async function getScene(index)
         outlinePostProcess, outlineWidth, sunColor, backgroundColor2, backgroundColor3;
 
     ({ 
-        spheres, boxes, toruses, 
+        spheres, boxes, toruses, cylinders, 
         backgroundColor, maxMarchingSteps, 
         showFloor, mandelbulb, weirdScene, 
         farPlane, softShadowK, marchingStep, 
         outlinePostProcess, outlineWidth, sunColor, backgroundColor2, backgroundColor3
     } = await getAvailableScene(index, availableScenes));
+
+    // cenas antigas não têm a lista de cilindros
+    cylinders = cylinders ?? [];
 
     uniforms.maxMarchingSteps = maxMarchingSteps;
     uniforms.showFloor = showFloor;
@@ -499,6 +525,7 @@ function writeUniforms()
     uniforms.sphereCount = spheres.length;
     uniforms.boxCount = boxes.length;
     uniforms.torusCount = toruses.length;
+    uniforms.cylinderCount = cylinders.length;
     
     var uniformData = new Float32Array(uniformsBufferSize / sizes.f32);
     var offset = 0;
@@ -561,6 +588,7 @@ function writeBuffers()
     shapes = shapes.concat(spheres);
     shapes = shapes.concat(boxes);
     shapes = shapes.concat(toruses);
+    shapes = shapes.concat(cylinders);
 
     writeBuffer(shapesBuffer, shapesBufferSize, shapes);
 
@@ -577,6 +605,9 @@ function writeBuffers()
                 break;
             case "Torus":
                 shapesInfo.push([2, i, shapes[i].op[0], 0]);
+                break;
+            case "Cylinder":
+                shapesInfo.push([3, i, shapes[i].op[0], 0]);
                 break;
         }
     }
@@ -613,7 +644,7 @@ function dispatchComputeRenderPass(pass)
     pass.setBindGroup(1, uniformsBindGroup);
     pass.setBindGroup(2, objectsBindGroup);
 
-    var workgroupPre = math.ceil((spheres.length + boxes.length + toruses.length) / THREAD_COUNT);
+    var workgroupPre = math.ceil((spheres.length + boxes.length + toruses.length + cylinders.length) / THREAD_COUNT);
     pass.setPipeline(preprocessKernel);
     pass.dispatchWorkgroups(workgroupPre < 1 ? 1 : workgroupPre, 1, 1);
 
